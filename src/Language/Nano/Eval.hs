@@ -167,12 +167,42 @@ exitError (Error msg) = return (VErr msg)
 --------------------------------------------------------------------------------
 eval :: Env -> Expr -> Value
 --------------------------------------------------------------------------------
-eval = error "TBD:eval"
+eval _   (EInt n)      = VInt n
+eval _   (EBool b)     = VBool b
+eval _   ENil          = VNil
+eval env (EVar x)      = lookupId x env
+eval env (EBin op a b) = evalOp op (eval env a) (eval env b)
+eval env (EIf c t e)   = case eval env c of
+                           VBool True  -> eval env t
+                           VBool False -> eval env e
+                           _           -> throw (Error "type error: if condition")
+eval env (ELet x e1 e2) = eval env' e2
+  where
+    -- lazy knot: v's closure captures env', which contains v (enables recursion)
+    v    = eval env' e1
+    env' = extendEnv x v env
+eval env (ELam x body) = VClos env x body
+eval env (EApp f a)    = case eval env f of
+                           VClos cenv x body -> eval (extendEnv x arg cenv) body
+                           VPrim p           -> p arg
+                           _                 -> throw (Error "type error: not a function")
+  where
+    arg = eval env a
 
 --------------------------------------------------------------------------------
 evalOp :: Binop -> Value -> Value -> Value
 --------------------------------------------------------------------------------
-evalOp = error "TBD:evalOp"
+evalOp Plus  (VInt a)  (VInt b)  = VInt (a + b)
+evalOp Minus (VInt a)  (VInt b)  = VInt (a - b)
+evalOp Mul   (VInt a)  (VInt b)  = VInt (a * b)
+evalOp Lt    (VInt a)  (VInt b)  = VBool (a < b)
+evalOp Le    (VInt a)  (VInt b)  = VBool (a <= b)
+evalOp And   (VBool a) (VBool b) = VBool (a && b)
+evalOp Or    (VBool a) (VBool b) = VBool (a || b)
+evalOp Eq    a         b         = VBool (a == b)
+evalOp Ne    a         b         = VBool (a /= b)
+evalOp Cons  a         b         = VPair a b
+evalOp _     _         _         = throw (Error "type error: binop")
 
 --------------------------------------------------------------------------------
 -- | `lookupId x env` returns the most recent
@@ -191,7 +221,10 @@ evalOp = error "TBD:evalOp"
 --------------------------------------------------------------------------------
 lookupId :: Id -> Env -> Value
 --------------------------------------------------------------------------------
-lookupId = error "TBD:lookupId"
+lookupId x []              = throw (Error ("unbound variable: " ++ x))
+lookupId x ((y, v) : rest)
+  | x == y                 = v
+  | otherwise              = lookupId x rest
 
 
 --------------------------------------------------------------------------------
@@ -200,14 +233,26 @@ lookupId = error "TBD:lookupId"
 --------------------------------------------------------------------------------
 extendEnv :: Id -> Value -> Env -> Env
 --------------------------------------------------------------------------------
-extendEnv x v env = error "TBD:extendEnv"
-
-
+extendEnv x v env = (x, v) : env
+ 
+ 
 prelude :: Env
 prelude =
   [ -- HINT: you may extend this "built-in" environment
     -- with some "operators" that you find useful...
+    ("head", VPrim headPrim) 
+  , ("tail", VPrim tailPrim)
   ]
+ 
+headPrim :: Value -> Value
+headPrim (VPair h _) = h
+headPrim VNil        = throw (Error "head: empty list")
+headPrim _           = throw (Error "type error: head")
+ 
+tailPrim :: Value -> Value
+tailPrim (VPair _ t) = t
+tailPrim VNil        = throw (Error "tail: empty list")
+tailPrim _           = throw (Error "type error: tail")
 
 env0 :: Env
 env0 =  [ ("z1", VInt 0)
